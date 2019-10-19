@@ -1,0 +1,142 @@
+version: 2.1
+
+executors:
+  docker:
+    docker:
+      - image: docker:stable
+  golang:
+    docker:
+      # Note: can't use Alpine because of https://github.com/golang/go/issues/14481
+      - image: golang:1.13.2
+  node:
+    docker:
+      - image: node:10.16.3-alpine
+
+jobs:
+  go-checkout:
+    executor: golang
+    steps:
+      - checkout
+      - run: go mod download
+      - persist_to_workspace:
+          root: .
+          paths:
+            - "*"
+
+  go-build:
+    executor: golang
+    steps:
+      - attach_workspace:
+          at: .
+      - run: |
+          apt update
+          apt install --yes build-essential
+      - run: go build -race $(go list ./cmd/...)
+
+  go-test:
+    executor: golang
+    steps:
+      - attach_workspace:
+          at: .
+      - run: |
+          apt update
+          apt install --yes build-essential
+      - run: go test -race -cover $(go list ./... | grep -v "vendor")
+
+  go-vet:
+    executor: golang
+    steps:
+      - attach_workspace:
+          at: .
+      - run: |
+          apt update
+          apt install --yes build-essential
+      - run: go vet $(go list ./... | grep -v "vendor")
+
+  go-lint:
+    executor: golang
+    steps:
+      - attach_workspace:
+          at: .
+      - run: go get golang.org/x/lint/golint
+      - run: golint -set_exit_status ./...
+
+  go-staticcheck:
+    executor: golang
+    steps:
+      - attach_workspace:
+          at: .
+      - run: |
+          apt update
+          apt install --yes build-essential
+      - run: go get honnef.co/go/tools/cmd/staticcheck
+      - run: staticcheck $(go list ./... | grep -v "vendor")
+
+  go-status-check:
+    executor: golang
+    steps:
+      - run: echo OK
+
+  node-checkout:
+    executor: node
+    steps:
+      - checkout
+      - run: npm install
+      - persist_to_workspace:
+          root: .
+          paths:
+            - "*"
+
+  node-test:
+    executor: node
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          working_directory: web
+          command: npm test
+
+  node-lint:
+    executor: node
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+            working_directory: web
+            command: npm lint
+
+  go-docker-build:
+    executor: docker
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run: docker build --file build/docker/Dockerfile .
+
+workflows:
+  version: 2.1
+  build:
+    jobs:
+      - go-checkout
+      - go-build:
+          requires:
+            - go-checkout
+      - go-test:
+          requires:
+            - go-checkout
+      - go-vet:
+          requires:
+            - go-checkout
+      - go-lint:
+          requires:
+            - go-checkout
+      - go-staticcheck:
+          requires:
+            - go-checkout
+      - go-status-check:
+          requires:
+            - go-build
+            - go-test
+            - go-vet
+            - go-lint
+            - go-staticcheck
+
