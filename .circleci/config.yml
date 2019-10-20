@@ -86,11 +86,6 @@ jobs:
       - run: go get honnef.co/go/tools/cmd/staticcheck
       - run: staticcheck $(go list ./... | grep -v "vendor")
 
-  go-status-check:
-    executor: golang
-    steps:
-      - run: echo OK
-
   react-checkout:
     executor: node
     steps:
@@ -130,17 +125,17 @@ jobs:
             - react-{{ .Environment.CIRCLE_WORKFLOW_ID }}
       - run: npm run lint
 
-  react-status-check:
-    executor: node
-    steps:
-      - run: echo OK
-
-  go-docker-build:
+  docker-build:
     executor: docker
     steps:
       - checkout
       - setup_remote_docker
       - run: docker build --file build/docker/Dockerfile .
+
+  status-check:
+    executor: node
+    steps:
+      - run: echo OK
 
 workflows:
   version: 2.1
@@ -162,13 +157,6 @@ workflows:
       - go-staticcheck:
           requires:
             - go-checkout
-      - go-status-check:
-          requires:
-            - go-build
-            - go-test
-            - go-vet
-            - go-lint
-            - go-staticcheck
               
       - react-checkout
       - react-build:
@@ -180,9 +168,18 @@ workflows:
 #      - react-lint:
 #          requires:
 #            - react-checkout
-      - react-status-check:
+
+      - docker-build
+
+      - status-check:
           requires:
+            - go-build
+            - go-test
+            - go-vet
+            - go-lint
+            - go-staticcheck
             - react-build
             - react-test
 #            - react-lint
+            - docker-build
 
