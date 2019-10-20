@@ -6,11 +6,10 @@ executors:
       - image: docker:stable
   golang:
     docker:
-      # Note: can't use Alpine because of https://github.com/golang/go/issues/14481
-      - image: golang:1.13.2
+      - image: circleci/golang:1.13.1
   node:
     docker:
-      - image: node:10.16.3-alpine
+      - image: circleci/node:10.16.3
 
 jobs:
   go-checkout:
@@ -18,57 +17,72 @@ jobs:
     steps:
       - checkout
       - run: go mod download
-      - persist_to_workspace:
-          root: .
+      - save_cache:
+          key: go-{{ .Environment.CIRCLE_WORKFLOW_ID }}
           paths:
-            - "*"
+            - "./"
 
   go-build:
     executor: golang
     steps:
-      - attach_workspace:
-          at: .
+      - restore_cache:
+          keys:
+            - go-{{ .Environment.CIRCLE_WORKFLOW_ID }}
+          paths:
+            - "./"
       - run: |
-          apt update
-          apt install --yes build-essential
+          sudo apt update
+          sudo apt install --yes build-essential
       - run: go build -race $(go list ./cmd/...)
 
   go-test:
     executor: golang
     steps:
-      - attach_workspace:
-          at: .
+      - restore_cache:
+          keys:
+            - go-{{ .Environment.CIRCLE_WORKFLOW_ID }}
+          paths:
+            - "./"
       - run: |
-          apt update
-          apt install --yes build-essential
+          sudo apt update
+          sudo apt install --yes build-essential
       - run: go test -race -cover $(go list ./... | grep -v "vendor")
 
   go-vet:
     executor: golang
     steps:
-      - attach_workspace:
-          at: .
+      - restore_cache:
+          keys:
+            - go-{{ .Environment.CIRCLE_WORKFLOW_ID }}
+          paths:
+            - "./"
       - run: |
-          apt update
-          apt install --yes build-essential
+          sudo apt update
+          sudo apt install --yes build-essential
       - run: go vet $(go list ./... | grep -v "vendor")
 
   go-lint:
     executor: golang
     steps:
-      - attach_workspace:
-          at: .
+      - restore_cache:
+          keys:
+            - go-{{ .Environment.CIRCLE_WORKFLOW_ID }}
+          paths:
+            - "./"
       - run: go get golang.org/x/lint/golint
       - run: golint -set_exit_status ./...
 
   go-staticcheck:
     executor: golang
     steps:
-      - attach_workspace:
-          at: .
+      - restore_cache:
+          keys:
+            - go-{{ .Environment.CIRCLE_WORKFLOW_ID }}
+          paths:
+            - "./"
       - run: |
-          apt update
-          apt install --yes build-essential
+          sudo apt update
+          sudo apt install --yes build-essential
       - run: go get honnef.co/go/tools/cmd/staticcheck
       - run: staticcheck $(go list ./... | grep -v "vendor")
 
@@ -77,33 +91,49 @@ jobs:
     steps:
       - run: echo OK
 
-  node-checkout:
+  react-checkout:
     executor: node
     steps:
       - checkout
-      - run: npm install
-      - persist_to_workspace:
-          root: .
+      - run:
+          working_directory: "~/project/web"
+          command: npm install
+      - save_cache:
+          key: react-{{ .Environment.CIRCLE_WORKFLOW_ID }}
           paths:
-            - "*"
+            - "./"
 
-  node-test:
+  react-build:
+    executor: node
+    working_directory: "~/project/web"
+    steps:
+      - restore_cache:
+          keys:
+            - react-{{ .Environment.CIRCLE_WORKFLOW_ID }}
+      - run: npm run build
+
+  react-test:
+    executor: node
+    working_directory: "~/project/web"
+    steps:
+      - restore_cache:
+          keys:
+            - react-{{ .Environment.CIRCLE_WORKFLOW_ID }}
+      - run: npm test
+
+  react-lint:
+    executor: node
+    working_directory: "~/project/web"
+    steps:
+      - restore_cache:
+          keys:
+            - react-{{ .Environment.CIRCLE_WORKFLOW_ID }}
+      - run: npm run lint
+
+  react-status-check:
     executor: node
     steps:
-      - attach_workspace:
-          at: .
-      - run:
-          working_directory: web
-          command: npm test
-
-  node-lint:
-    executor: node
-    steps:
-      - attach_workspace:
-          at: .
-      - run:
-            working_directory: web
-            command: npm lint
+      - run: echo OK
 
   go-docker-build:
     executor: docker
@@ -139,4 +169,20 @@ workflows:
             - go-vet
             - go-lint
             - go-staticcheck
+              
+      - react-checkout
+      - react-build:
+          requires:
+            - react-checkout
+      - react-test:
+          requires:
+            - react-checkout
+#      - react-lint:
+#          requires:
+#            - react-checkout
+      - react-status-check:
+          requires:
+            - react-build
+            - react-test
+#            - react-lint
 
