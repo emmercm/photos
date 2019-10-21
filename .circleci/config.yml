@@ -86,6 +86,19 @@ jobs:
       - run: go get honnef.co/go/tools/cmd/staticcheck
       - run: staticcheck $(go list ./... | grep -v "vendor")
 
+  go-mod-tidy:
+    executor: golang
+    steps:
+      - restore_cache:
+          keys:
+            - go-{{ .Environment.CIRCLE_WORKFLOW_ID }}
+          paths:
+            - "./"
+      - run: |
+          MD5=$(md5sum go.mod go.sum)
+          go mod tidy && go fmt ./...
+          if [[ "$(md5sum go.mod go.sum)" != "${MD5}" ]]; then exit 1; fi
+
   react-checkout:
     executor: node
     steps:
@@ -157,6 +170,9 @@ workflows:
       - go-staticcheck:
           requires:
             - go-checkout
+      - go-mod-tidy:
+          requires:
+            - go-checkout
               
       - react-checkout
       - react-build:
@@ -178,6 +194,7 @@ workflows:
             - go-vet
             - go-lint
             - go-staticcheck
+            - go-mod-tidy
             - react-build
             - react-test
 #            - react-lint
